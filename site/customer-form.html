@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>顧客登録フォーム</title>
+</head>
+<body>
+    <h1>顧客登録フォーム</h1>
+
+    <form id="customerForm">
+        <div>
+            <label>顧客コード</label>
+            <input type="text" name="customer_code" placeholder="customer_004" required>
+        </div>
+
+        <div>
+            <label>年代</label>
+            <select name="age_group" required>
+                <option value="">選択してください</option>
+                <option value="20代">20代</option>
+                <option value="30代">30代</option>
+                <option value="40代">40代</option>
+                <option value="50代">50代</option>
+                <option value="60代">60代</option>
+            </select>
+        </div>
+
+        <div>
+            <label>性別</label>
+            <select name="gender" required>
+                <option value="">選択してください</option>
+                <option value="male">男性</option>
+                <option value="female">女性</option>
+                <option value="other">その他</option>
+            </select>
+        </div>
+
+        <button type="submit">登録する</button>
+    </form>
+
+    <p id="message"></p>
+
+    <script>
+        const form = document.getElementById("customerForm");
+        const message = document.getElementById("message");
+
+        form.addEventListener("submit", async function(event) {
+            event.preventDefault();
+
+            const formData = new FormData(form);
+            const body = new URLSearchParams(formData);
+
+            try {
+                const response = await fetch("http://localhost:8080/customers", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/x-www-form-urlencoded"
+                    },
+                    body: body
+                });
+
+                const result = await response.text();
+                message.textContent = result;
+
+                if (response.ok) {
+                    form.reset();
+                }
+
+            } catch (error) {
+                message.textContent = "通信エラーが発生しました";
+                console.error(error);
+            }
+        });
+    </script>
+</body>
+</html>
