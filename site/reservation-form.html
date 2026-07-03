@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>予約登録フォーム</title>
+    <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+    <main class="app-shell">
+        <section class="screen">
+            <div class="screen-header">
+                <div>
+                    <p class="eyebrow">Reservation</p>
+                    <h1>予約登録フォーム</h1>
+                    <p>顧客コードと予約枠IDを入力して予約データを登録します。</p>
+                </div>
+            </div>
+
+            <form id="reservationForm" class="card">
+                <div class="form-row">
+                    <label>顧客コード</label>
+                    <input type="text" name="customer_code" placeholder="customer_004" required>
+                </div>
+
+                <div class="form-row">
+                    <label>予約枠ID</label>
+                    <input type="number" name="slot_id" placeholder="1" required>
+                </div>
+
+                <button type="submit" class="primary-button">予約登録する</button>
+            </form>
+
+            <p id="message"></p>
+        </section>
+    </main>
+
+    <script>
+        const form = document.getElementById("reservationForm");
+        const message = document.getElementById("message");
+
+        form.addEventListener("submit", async function(event) {
+            event.preventDefault();
+
+            const formData = new FormData(form);
+            const body = new URLSearchParams(formData);
+
+            try {
+                const response = await fetch("http://localhost:8080/reservations", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/x-www-form-urlencoded"
+                    },
+                    body: body
+                });
+
+                const result = await response.text();
+                message.textContent = result;
+
+                if (response.ok) {
+                    form.reset();
+                }
+
+            } catch (error) {
+                message.textContent = "通信エラーが発生しました";
+                console.error(error);
+            }
+        });
+    </script>
+</body>
+</html>
