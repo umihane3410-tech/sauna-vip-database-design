@@ -1,4 +1,6 @@
 db/
+out/
 *.db
 *.sqlite
 *.sqlite3
+*.class

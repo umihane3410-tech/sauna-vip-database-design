@@ -66,7 +66,7 @@ public class App {
                     reservationResult.getString("customer_code")
                     + " / 日付: " + reservationResult.getString("slot_date")
                     + " / 時間: " + reservationResult.getString("start_time")
-                    + "〜" + reservationResult.getString("end_time")
+                    + " - " + reservationResult.getString("end_time")
                     + " / 金額: " + reservationResult.getInt("amount")
                     + "円 / 状態: " + reservationResult.getString("payment_status")
                 );
