@@ -1,74 +1,62 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <title>予約登録フォーム</title>
-    <link rel="stylesheet" href="./style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>予約登録フォーム</title>
+  <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-    <main class="app-shell">
-        <section class="screen">
-            <div class="screen-header">
-                <div>
-                    <p class="eyebrow">Reservation</p>
-                    <h1>予約登録フォーム</h1>
-                    <p>顧客コードと予約枠IDを入力して予約データを登録します。</p>
-                </div>
-            </div>
+  <main class="app-shell">
+    <section class="screen">
+      <div class="screen-header">
+        <div>
+          <p class="eyebrow">Reservation</p>
+          <h1>予約登録フォーム</h1>
+          <p>顧客コードと予約枠IDを入力して、予約、支払い、紹介料を登録します。</p>
+        </div>
+      </div>
 
-            <form id="reservationForm" class="card">
-                <div class="form-row">
-                    <label>顧客コード</label>
-                    <input type="text" name="customer_code" placeholder="customer_004" required>
-                </div>
+      <form id="reservationForm" class="card">
+        <label class="form-row">
+          <span>顧客コード</span>
+          <input type="text" name="customer_code" placeholder="customer_001" required>
+        </label>
 
-                <div class="form-row">
-                    <label>予約枠ID</label>
-                    <input type="number" name="slot_id" placeholder="1" required>
-                </div>
+        <label class="form-row">
+          <span>予約枠ID</span>
+          <input type="number" name="slot_id" placeholder="1" required>
+        </label>
 
-                <button type="submit" class="primary-button">予約登録する</button>
-            </form>
+        <button type="submit" class="primary-button">予約を登録する</button>
+      </form>
 
-            <p id="message"></p>
-        </section>
-    </main>
+      <p id="message"></p>
+      <p><a href="./index.html">トップへ戻る</a></p>
+    </section>
+  </main>
 
-    <script>
-        const form = document.getElementById("reservationForm");
-        const message = document.getElementById("message");
+  <script>
+    const form = document.getElementById("reservationForm");
+    const message = document.getElementById("message");
 
-        form.addEventListener("submit", async function(event) {
-            event.preventDefault();
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const body = new URLSearchParams(new FormData(form));
 
-            const formData = new FormData(form);
-            const body = new URLSearchParams(formData);
-
-            try {
-                const response = await fetch("http://localhost:8080/reservations", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/x-www-form-urlencoded"
-                    },
-                    body: body
-                });
-
-                const result = await response.text();
-                message.textContent = result;
-
-                if (response.ok) {
-                    form.reset();
-                }
-
-            } catch (error) {
-                message.textContent = "通信エラーが発生しました";
-                console.error(error);
-            }
+      try {
+        const response = await fetch("/reservations", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body
         });
-    </script>
+        message.textContent = await response.text();
+        if (response.ok) form.reset();
+      } catch (error) {
+        message.textContent = "通信エラーが発生しました";
+        console.error(error);
+      }
+    });
+  </script>
 </body>
-<a href="./index.html" class="app-back-button">
-    <span></span>
-    トップへ戻る
-</a>
 </html>

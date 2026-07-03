@@ -1,0 +1,77 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build Java",
+      "type": "shell",
+      "command": "javac",
+      "args": [
+        "-encoding",
+        "UTF-8",
+        "-cp",
+        "lib\\sqlite-jdbc-3.53.2.0.jar",
+        "-d",
+        "out",
+        "src\\ServerApp.java",
+        "src\\App.java"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$javac"
+    },
+    {
+      "label": "Run Server 8081",
+      "type": "shell",
+      "command": "java",
+      "args": [
+        "-cp",
+        "out;lib\\sqlite-jdbc-3.53.2.0.jar",
+        "ServerApp",
+        "8081"
+      ],
+      "dependsOn": "Build Java",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Check DB",
+      "type": "shell",
+      "command": "java",
+      "args": [
+        "-cp",
+        "out;lib\\sqlite-jdbc-3.53.2.0.jar",
+        "App"
+      ],
+      "dependsOn": "Build Java",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Open Browser",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "Start-Process http://localhost:8081/"
+      ],
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

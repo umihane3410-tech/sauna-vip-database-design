@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PRIVATE SAUNA KONOSU VIP System</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body class="is-login">
+  <button id="globalLogoutButton" class="global-logout-button hidden" type="button" aria-label="ログアウト">
+    <span class="global-logout-icon" aria-hidden="true"></span>
+    <span>ログアウト</span>
+  </button>
+
+  <header class="app-header hidden">
+    <div>
+      <p class="eyebrow">PRIVATE SAUNA KONOSU</p>
+      <h1>VIP顧客抽出・招待予約システム</h1>
+    </div>
+    <button id="logoutButton" class="secondary-button hidden" type="button">ログアウト</button>
+  </header>
+
+  <main id="app" class="app-shell"></main>
+
+  <div id="toast" class="toast" aria-live="polite"></div>
+
+  <div id="modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <section class="modal card">
+      <div class="modal-header">
+        <h2 id="modalTitle"></h2>
+        <button id="modalClose" class="ghost-button" type="button" aria-label="閉じる">閉じる</button>
+      </div>
+      <div id="modalBody"></div>
+      <div id="modalActions" class="modal-actions"></div>
+    </section>
+  </div>
+
+  <script src="./script.js"></script>
+  <script src="./api-sync.js"></script>
+</body>
+</html>

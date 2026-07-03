@@ -1,0 +1,11 @@
+{
+  "files.encoding": "utf8",
+  "java.project.sourcePaths": [
+    "src"
+  ],
+  "java.project.outputPath": "out",
+  "java.project.referencedLibraries": [
+    "lib/sqlite-jdbc-3.53.2.0.jar"
+  ],
+  "java.configuration.updateBuildConfiguration": "interactive"
+}
