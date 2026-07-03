@@ -29,7 +29,7 @@ erDiagram
     }
 
     CUSTOMERS {
-        INTEGER customer_id PK
+        TEXT customer_id PK
         TEXT customer_code
         TEXT age_group
         TEXT gender
