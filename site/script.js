@@ -58,7 +58,6 @@ const menus = {
     ["history", "予約履歴"],
     ["stamps", "スタンプ"],
     ["qr", "QR読み取り"],
-    ["coupons", "クーポン"],
     ["settings", "設定"],
     ["notices", "お知らせ"]
   ],
@@ -146,7 +145,7 @@ function getVipPipelineStats() {
     vip: scored.filter((item) => item.score.isVip).length,
     invited: state.vipUser.invited ? 1 : 0,
     rankS: scored.filter((item) => item.score.rank === "S").length,
-    rankA: scored.filter((item) => item.score.rank === "A").length
+    rankA: scored.filter((item) => item.score.rank !== "S" && item.score.isVip).length
   };
 }
 
@@ -424,7 +423,6 @@ function renderPage(page) {
     history: renderHistory,
     stamps: renderStamps,
     qr: renderQr,
-    coupons: renderCoupons,
     settings: renderVipSettings,
     notices: renderNotices,
     systemOverview: renderSystemOverview,
@@ -795,15 +793,6 @@ function completeVisitByQr() {
   renderShell();
 }
 
-function renderCoupons() {
-  screenHtml("クーポン", "利用可能なVIP向けクーポンです。", `
-    <div class="coupon-grid">
-      <div class="card"><span class="badge gold">VIP</span><h3>アロマロウリュ無料</h3><p>次回予約時に利用できます。</p></div>
-      <div class="card"><span class="badge gold">STAMP</span><h3>ドリンクアップグレード</h3><p>スタンプ3個以上で利用可能です。</p></div>
-    </div>
-  `);
-}
-
 function renderNotices() {
   if (state.currentUser?.role === "vip") {
     document.getElementById("screen").innerHTML = `
@@ -922,7 +911,7 @@ function renderScoring() {
   screenHtml("VIPスコアリング", "提携先DBの顧客データを連携し、提携先ごとのRFM順位と合計順位スコアでランク付けします。", `
     <div class="vip-pipeline-grid">
       <div class="vip-pipeline-card"><span>連携顧客DB</span><strong>${stats.total}件</strong><p>提携先から提供された顧客データ</p></div>
-      <div class="vip-pipeline-card"><span>VIP候補</span><strong>${stats.rankS + stats.rankA}件</strong><p>S/Aランクの優良候補</p></div>
+      <div class="vip-pipeline-card"><span>VIP候補</span><strong>${stats.vip}件</strong><p>上位5%以内の優良候補</p></div>
       <div class="vip-pipeline-card"><span>招待可能</span><strong>${stats.vip}件</strong><p>上位5%のSランク顧客</p></div>
       <div class="vip-pipeline-card"><span>招待送信済み</span><strong>${stats.invited}件</strong><p>予約画面アクセス許可済み</p></div>
     </div>
@@ -1345,7 +1334,6 @@ function renderPage(page) {
     history: renderHistory,
     stamps: renderStamps,
     qr: renderQr,
-    coupons: renderCoupons,
     settings: renderVipSettings,
     notices: renderNotices,
     adminMenu: renderAdminMenu,
@@ -1397,7 +1385,7 @@ function renderAdminMenu() {
         <h3>VIP抽出から予約までの流れ</h3>
         <div class="admin-flow-grid">
           <div><b>1</b><strong>顧客DB連携</strong><p>提携先の既存顧客データを取り込みます。</p></div>
-          <div><b>2</b><strong>RFMランク判定</strong><p>提携先ごとのRFM順位と上位5%抽出でS/A/B/Cに分類します。</p></div>
+          <div><b>2</b><strong>RFMランク判定</strong><p>提携先ごとのRFM順位で、上位5%以内だけをSランクVIPとして判定します。</p></div>
           <div><b>3</b><strong>シークレット招待</strong><p>Sランクの顧客だけに招待を送信します。</p></div>
           <div><b>4</b><strong>予約と還元</strong><p>来店済み予約だけ10%の報酬対象にします。</p></div>
         </div>
@@ -1603,11 +1591,8 @@ function calculateRfmVipEligibility(customer) {
   }
 
   const vipCutoff = Math.max(1, Math.ceil(current.count * 0.05));
-  const top20Cutoff = Math.max(vipCutoff, Math.ceil(current.count * 0.2));
-  const top50Cutoff = Math.max(top20Cutoff, Math.ceil(current.count * 0.5));
   const isVip = current.totalRank <= vipCutoff;
-  const rank = isVip ? "S" : current.totalRank <= top20Cutoff ? "A" : current.totalRank <= top50Cutoff ? "B" : "C";
-  const topPercent = Math.ceil((current.totalRank / current.count) * 100);
+  const rank = isVip ? "S" : "C";
 
   return {
     checks: [
@@ -1618,7 +1603,7 @@ function calculateRfmVipEligibility(customer) {
     passedCount: isVip ? 3 : 0,
     totalCount: 3,
     rank,
-    scoreLabel: `総合${current.totalRank}/${current.count}位・上位${topPercent}%`,
+    scoreLabel: `総合${current.totalRank}/${current.count}位 / VIP基準: 上位5%以内（抽出枠${vipCutoff}名）`,
     isVip,
     rfmScore: current.totalScore,
     vipCutoff
@@ -1634,8 +1619,8 @@ function renderScoring() {
   screenHtml("VIP自動抽出", "提携先ごとにRFMを順位付けし、合計順位スコア上位5%のSランク顧客だけにシークレット招待を送信します。", `
     <div class="vip-pipeline-grid">
       <div class="vip-pipeline-card"><span>顧客DB</span><strong>${stats.total}件</strong><p>提携先から連携済み</p></div>
-      <div class="vip-pipeline-card"><span>SランクVIP</span><strong>${stats.vip}件</strong><p>招待可能な顧客</p></div>
-      <div class="vip-pipeline-card"><span>Aランク候補</span><strong>${stats.rankA}件</strong><p>上位20%圏内の候補</p></div>
+      <div class="vip-pipeline-card"><span>VIP判定基準</span><strong>上位5%</strong><p>提携先ごとに個別判定</p></div>
+      <div class="vip-pipeline-card"><span>SランクVIP</span><strong>${stats.vip}件</strong><p>上位5%以内の招待対象</p></div>
       <div class="vip-pipeline-card"><span>招待送信済み</span><strong>${stats.invited}件</strong><p>予約画面アクセス許可済み</p></div>
     </div>
     ${customerTable(true)}
@@ -2246,30 +2231,31 @@ renderBooking = function renderBooking() {
     renderVipLockedPage();
     return;
   }
-  const publishedSlots = state.slots.filter((slot) => slot.published !== false);
+  const publishedSlots = getBookableSlots();
   document.getElementById("screen").innerHTML = `
     <section class="vip-booking-page">
       <div class="vip-booking-title">
         <span class="vip-badge">VIP MEMBER</span>
         <h2>シークレット枠予約</h2>
-        <p>招待制VIP会員だけが利用できる、平日日中の特別予約枠です。</p>
+        <p>DBの予約枠を今日以降の予約可能日時として表示しています。</p>
       </div>
       <form id="bookingForm" class="card vip-booking-card">
         <div class="grid-2">
-          <label class="form-row"><span>店舗</span><select id="slotSelect">${publishedSlots.map((slot) => `<option value="${slot.id}">${slot.store} / ${slot.room} / ${slot.date} / ${slot.time}</option>`).join("")}</select></label>
+          <label class="form-row"><span>店舗</span><select id="slotSelect" ${publishedSlots.length ? "" : "disabled"}>${publishedSlots.map((slot) => `<option value="${slot.id}">${slot.store} / ${slot.room} / ${slot.date} / ${slot.time}${slot.dateAdjusted ? "（現在日付に補正）" : ""}</option>`).join("")}</select></label>
           <label class="form-row"><span>プラン</span><select id="planSelect"><option>Secret Sauna 90分</option><option>Executive 120分</option><option>Platinum Relax 120分</option></select></label>
         </div>
         <div class="vip-booking-note">
           <strong>INVITED GUEST ONLY</strong>
-          <p>この予約枠は一般公開されていません。提携先内RFM順位の上位5%に入った会員だけに表示されます。</p>
+          <p>${publishedSlots.length ? "この予約枠は一般公開されていません。提携先内RFM順位の上位5%に入った会員だけに表示されます。" : "現在、予約可能なDB枠がありません。管理者画面から枠を追加してください。"}</p>
         </div>
-        <button class="primary-button" type="submit">予約内容を確認する</button>
+        <button class="primary-button" type="submit" ${publishedSlots.length ? "" : "disabled"}>予約内容を確認する</button>
       </form>
     </section>
   `;
   document.getElementById("bookingForm").addEventListener("submit", (event) => {
     event.preventDefault();
-    const slot = state.slots.find((item) => item.id === document.getElementById("slotSelect").value);
+    const slot = getBookableSlots().find((item) => item.id === document.getElementById("slotSelect").value);
+    if (!slot) return showToast("予約可能なDB枠がありません。", "error");
     state.bookingDraft = { ...slot, plan: document.getElementById("planSelect").value };
     saveState();
     renderBookingConfirm();
@@ -2456,6 +2442,50 @@ function adminDbYen(value) {
 
 function adminDbArray(value) {
   return Array.isArray(value) ? value : [];
+}
+
+function adminDbTodayIso() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function adminDbAddDaysIso(baseIso, days) {
+  const [year, month, day] = String(baseIso).split("-").map(Number);
+  const date = new Date(year, (month || 1) - 1, day || 1);
+  date.setDate(date.getDate() + days);
+  const nextYear = date.getFullYear();
+  const nextMonth = String(date.getMonth() + 1).padStart(2, "0");
+  const nextDay = String(date.getDate()).padStart(2, "0");
+  return `${nextYear}-${nextMonth}-${nextDay}`;
+}
+
+function normalizeSlotForCurrentDate(slot, index = 0) {
+  const today = adminDbTodayIso();
+  const originalDate = slot?.date || today;
+  const date = originalDate >= today ? originalDate : adminDbAddDaysIso(today, index);
+  return {
+    ...slot,
+    date,
+    originalDate,
+    dateAdjusted: originalDate !== date
+  };
+}
+
+function getBookableSlots() {
+  return adminDbArray(state.slots)
+    .filter((slot) => slot.published !== false)
+    .sort((a, b) => `${a.date || ""} ${a.time || ""}`.localeCompare(`${b.date || ""} ${b.time || ""}`, "ja"))
+    .map((slot, index) => normalizeSlotForCurrentDate(slot, index))
+    .sort((a, b) => `${a.date || ""} ${a.time || ""}`.localeCompare(`${b.date || ""} ${b.time || ""}`, "ja"));
+}
+
+function getAdminDisplaySlots() {
+  return adminDbArray(state.slots)
+    .sort((a, b) => `${a.date || ""} ${a.time || ""}`.localeCompare(`${b.date || ""} ${b.time || ""}`, "ja"))
+    .map((slot, index) => normalizeSlotForCurrentDate(slot, index));
 }
 
 function getAdminCustomerSource() {
@@ -2813,18 +2843,19 @@ function renderNoticeAdmin() {
 }
 
 function renderSecretSlots() {
-  const slots = adminDbArray(state.slots);
+  const slots = getAdminDisplaySlots();
+  const today = adminDbTodayIso();
   document.getElementById("screen").innerHTML = `
     <section class="booking-form-page">
       <div class="admin-page-title">
         <h2>予約枠管理</h2>
-        <p>DB登録枠: ${slots.length}件</p>
+        <p>DB登録枠: ${slots.length}件 / 予約画面では今日以降の日時として表示</p>
       </div>
       <form id="slotForm" class="card">
         <div class="form-grid">
           <div class="form-row"><label>店舗</label><input id="slotStore" required></div>
           <div class="form-row"><label>部屋</label><input id="slotRoom" required></div>
-          <div class="form-row"><label>日付</label><input id="slotDate" type="date" required></div>
+          <div class="form-row"><label>日付</label><input id="slotDate" type="date" min="${today}" value="${today}" required></div>
           <div class="form-row"><label>時間帯</label><input id="slotTime" placeholder="平日 13:00" required></div>
           <div class="form-row"><label>価格</label><input id="slotPrice" type="number" required></div>
           <div class="form-row"><label>公開状態</label><select id="slotPublished"><option value="true">公開</option><option value="false">非公開</option></select></div>
@@ -2834,9 +2865,9 @@ function renderSecretSlots() {
       <div style="height:16px"></div>
       <div class="admin-table-card">
         <table class="admin-data-table">
-          <thead><tr><th>店舗</th><th>部屋</th><th>日付</th><th>時間</th><th>プラン</th><th>価格</th><th>公開状態</th></tr></thead>
+          <thead><tr><th>店舗</th><th>部屋</th><th>表示日付</th><th>時間</th><th>プラン</th><th>価格</th><th>公開状態</th><th>DB日付</th></tr></thead>
           <tbody>
-            ${slots.length ? slots.map((slot) => `<tr><td>${adminDbText(slot.store)}</td><td>${adminDbText(slot.room)}</td><td>${adminDbText(slot.date)}</td><td>${adminDbText(slot.time)}</td><td>${adminDbText(slot.plan)}</td><td>${adminDbYen(slot.price)}</td><td><span class="status-chip">${slot.published ? "公開" : "非公開"}</span></td></tr>`).join("") : `<tr><td colspan="7" class="empty-cell">DBに予約枠がありません</td></tr>`}
+            ${slots.length ? slots.map((slot) => `<tr><td>${adminDbText(slot.store)}</td><td>${adminDbText(slot.room)}</td><td>${adminDbText(slot.date)}${slot.dateAdjusted ? `<br><small>現在日付に補正</small>` : ""}</td><td>${adminDbText(slot.time)}</td><td>${adminDbText(slot.plan)}</td><td>${adminDbYen(slot.price)}</td><td><span class="status-chip">${slot.published ? "公開" : "非公開"}</span></td><td>${adminDbText(slot.originalDate || slot.date)}</td></tr>`).join("") : `<tr><td colspan="8" class="empty-cell">DBに予約枠がありません</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -2860,6 +2891,71 @@ function renderSecretSlots() {
     showToast("予約枠を追加しました。");
     renderShell();
   });
+}
+
+function getActivePartnerName() {
+  const partnerNames = adminDbArray(state.partners).map((partner) => partner.name).filter(Boolean);
+  const customerPartnerNames = adminDbArray(state.partnerCustomers).map((customer) => customer.partner).filter(Boolean);
+  return state.currentUser?.partner || partnerNames[0] || customerPartnerNames[0] || ADMIN_DB_PARTNER_UNSET;
+}
+
+function renderPartnerCustomerRows(customers, showInvite = false) {
+  if (!customers.length) return `<tr><td colspan="10" class="empty-cell">DBに提携先顧客データがありません</td></tr>`;
+  return customers.map((customer) => {
+    const score = calculateVipEligibility(customer);
+    return `<tr>
+      <td>${adminDbText(customer.memberNo || customer.id)}</td>
+      <td>${adminDbText(customer.name)}</td>
+      <td>${adminDbText(customer.partner)}</td>
+      <td>${adminDbText(customer.segment)}</td>
+      <td>${adminDbText(customer.recentDays)}日前</td>
+      <td>月${adminDbText(customer.frequency)}回</td>
+      <td>${adminDbYen(customer.amount)}</td>
+      <td><span class="rank-badge rank-${score.rank.toLowerCase()}">${adminDbText(score.rank)}</span></td>
+      <td>${adminDbText(score.scoreLabel)}<br><span class="muted">${score.checks.map((check) => adminDbText(check.label)).join("<br>")}</span></td>
+      <td>${score.isVip ? `<span class="vip-chip">上位5% VIP</span>` : `<span class="status-chip">対象外</span>`}${showInvite && score.isVip ? `<br><button class="primary-button" onclick="sendInvitation('${adminDbEscape(customer.id)}')">招待送信</button>` : ""}</td>
+    </tr>`;
+  }).join("");
+}
+
+function renderPartnerDashboard() {
+  const partnerName = getActivePartnerName();
+  const customers = adminDbArray(state.partnerCustomers).filter((customer) => customer.partner === partnerName);
+  const reservations = getAdminReservationSource().filter((reservation) => reservation.partner === partnerName && !isCanceledReservation(reservation));
+  const vipCount = customers.filter((customer) => calculateVipEligibility(customer).isVip).length;
+  const kickback = reservations.filter(isCompletedReservation).reduce((sum, reservation) => sum + Number(reservation.price || 0) * 0.1, 0);
+  screenHtml("提携先ダッシュボード", `${partnerName} のDBデータを表示しています。VIP判定基準は提携先内RFM合計順位の上位5%です。`, `
+    <div class="stats-grid">
+      <div class="stat-card"><span>提供顧客数</span><strong>${customers.length}</strong></div>
+      <div class="stat-card"><span>上位5% VIP</span><strong>${vipCount}</strong></div>
+      <div class="stat-card"><span>予約成立数</span><strong>${reservations.length}</strong></div>
+      <div class="stat-card"><span>キックバック金額</span><strong>${formatYen(kickback)}</strong></div>
+    </div>
+  `);
+}
+
+function renderPartnerCustomers() {
+  const partnerName = getActivePartnerName();
+  const customers = adminDbArray(state.partnerCustomers).filter((customer) => customer.partner === partnerName);
+  screenHtml("提携先顧客データ", `${partnerName} のDB顧客データです。R/F/Mをそれぞれ順位付けし、合計順位が上位5%の顧客だけをVIP判定します。`, `
+    <div class="admin-table-card"><table class="admin-data-table scoring-table">
+      <thead><tr><th>会員番号</th><th>顧客名</th><th>提携先</th><th>顧客層</th><th>最新利用</th><th>頻度</th><th>決済額</th><th>ランク</th><th>RFM順位</th><th>VIP判定</th></tr></thead>
+      <tbody>${renderPartnerCustomerRows(customers)}</tbody>
+    </table></div>
+  `);
+}
+
+function renderKickbacks() {
+  const partnerName = getActivePartnerName();
+  const rows = getAdminReservationSource().filter((reservation) => reservation.partner === partnerName && isCompletedReservation(reservation));
+  const total = rows.reduce((sum, reservation) => sum + Number(reservation.price || 0) * 0.1, 0);
+  screenHtml("キックバック確認", `${partnerName} の来店済み予約をDBから集計しています。`, `
+    ${emptyMessage(rows, `<div class="table-wrap"><table>
+      <thead><tr><th>予約</th><th>予約金額</th><th>報酬額</th><th>支払い予定ステータス</th></tr></thead>
+      <tbody>${rows.map((reservation) => `<tr><td>${adminDbText(reservation.userName)} / ${adminDbText(reservation.date)} ${adminDbText(reservation.time)}</td><td>${formatYen(reservation.price)}</td><td>${formatYen(Number(reservation.price || 0) * 0.1)}</td><td><span class="badge success">支払い予定</span></td></tr>`).join("")}</tbody>
+    </table></div>`)}
+    <div class="card" style="margin-top:14px;"><strong>合計報酬額: ${formatYen(total)}</strong></div>
+  `);
 }
 
 render();

@@ -1278,8 +1278,7 @@ body:not(.is-login) .login-guide {
 
 .role-grid,
 .card-grid,
-.stats-grid,
-.coupon-grid {
+.stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 14px;
@@ -2185,8 +2184,7 @@ tr:last-child td {
 
   .role-grid,
   .card-grid,
-  .stats-grid,
-  .coupon-grid {
+  .stats-grid {
     grid-template-columns: 1fr;
   }
 
