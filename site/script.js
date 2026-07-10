@@ -92,7 +92,26 @@ const appHeader = document.querySelector(".app-header");
 function loadState() {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (!saved) return structuredClone(defaultState);
-  return { ...structuredClone(defaultState), ...JSON.parse(saved) };
+  try {
+    return mergeState(structuredClone(defaultState), JSON.parse(saved));
+  } catch {
+    localStorage.removeItem(STORAGE_KEY);
+    return structuredClone(defaultState);
+  }
+}
+
+function mergeState(base, saved) {
+  if (!saved || typeof saved !== "object") return base;
+  Object.entries(saved).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      base[key] = value;
+    } else if (value && typeof value === "object" && base[key] && typeof base[key] === "object" && !Array.isArray(base[key])) {
+      base[key] = mergeState({ ...base[key] }, value);
+    } else if (value !== undefined) {
+      base[key] = value;
+    }
+  });
+  return base;
 }
 
 function saveState() {
@@ -1782,8 +1801,6 @@ function renderAnalytics() {
     </section>
   `;
 }
-
-render();
 
 function renderAnalytics() {
   const actualPoints = "40,265 70,265 100,265 130,265 160,265 190,265 220,265 250,265 280,265 310,265 340,118 370,265 400,38 430,265 460,142 490,118 520,118 550,265 580,265";
