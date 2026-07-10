@@ -28,6 +28,7 @@ function mergeServerState(payload) {
   if (!payload || typeof state === "undefined") return;
 
   state.partners = payload.partners?.length ? payload.partners : state.partners;
+  state.dbCustomers = Array.isArray(payload.customers) ? payload.customers : [];
   state.partnerCustomers = payload.partnerCustomers?.length ? payload.partnerCustomers : state.partnerCustomers;
   state.slots = payload.slots?.length ? payload.slots : state.slots;
   state.reservations = payload.reservations?.length ? payload.reservations : state.reservations;
@@ -158,3 +159,66 @@ renderNoticeAdmin = function renderNoticeAdminWithApi() {
 };
 
 hydrateFromDatabase();
+
+// The original admin pages are a design prototype with hard-coded rows. These
+// replacements render only the records returned from /api/bootstrap.
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>\"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[char]);
+}
+
+function adminData() {
+  return {
+    customers: Array.isArray(state.dbCustomers) ? state.dbCustomers : [],
+    reservations: Array.isArray(state.reservations) ? state.reservations : [],
+    notices: Array.isArray(state.notices) ? state.notices : []
+  };
+}
+
+function adminScreen(title, subtitle, body) {
+  const screen = document.getElementById("screen");
+  if (!screen) return;
+  screen.innerHTML = `<section class="admin-list-page"><div class="admin-page-title"><h2>${title}</h2><p>${subtitle}</p></div>${body}</section>`;
+}
+
+renderAdminMenu = function renderAdminMenuFromDatabase() {
+  const { customers, reservations, notices } = adminData();
+  const sales = reservations.filter((row) => row.status !== "キャンセル").reduce((sum, row) => sum + Number(row.price || 0), 0);
+  adminScreen("管理メニュー", "DBの最新データを表示しています", `
+    <div class="admin-menu-stats">
+      <article class="admin-mini-stat"><strong>${customers.length}</strong><p>登録会員数</p></article>
+      <article class="admin-mini-stat"><strong>${reservations.length}</strong><p>予約件数</p></article>
+      <article class="admin-mini-stat"><strong>${yen(sales)}</strong><p>予約売上</p></article>
+      <article class="admin-mini-stat"><strong>${notices.length}</strong><p>お知らせ件数</p></article>
+    </div><p class="muted">各メニューから、会員・予約・お知らせの詳細を確認できます。</p>`);
+};
+
+renderMembers = function renderMembersFromDatabase() {
+  const { customers } = adminData();
+  const rows = customers.map((member) => `<tr><td>${escapeHtml(member.code)}</td><td>${escapeHtml(member.name)}</td><td>${escapeHtml(member.email || "-")}</td><td><span class="partner-tag">${escapeHtml(member.partner || "-")}</span></td><td>${member.vip ? '<span class="vip-chip">VIP</span>' : "-"}</td><td>${Number(member.visits || 0)}回</td></tr>`).join("") || '<tr><td colspan="6" class="empty-cell">DBに会員データがありません</td></tr>';
+  adminScreen("会員管理", `登録会員: ${customers.length}名`, `<div class="admin-table-card"><table class="admin-data-table"><thead><tr><th>会員番号</th><th>氏名</th><th>メール</th><th>提携先</th><th>VIP</th><th>利用回数</th></tr></thead><tbody>${rows}</tbody></table></div>`);
+};
+
+renderReservationAdmin = function renderReservationAdminFromDatabase() {
+  const { reservations } = adminData();
+  const active = reservations.filter((row) => row.status !== "キャンセル");
+  const sales = active.reduce((sum, row) => sum + Number(row.price || 0), 0);
+  const rows = reservations.map((row) => `<tr><td>${escapeHtml(row.id)}</td><td>${escapeHtml(row.userName || "-")}<br><small>${escapeHtml(row.email || "")}</small></td><td>${escapeHtml(row.date || "-")}<br><small>${escapeHtml(row.time || "")}</small></td><td>${escapeHtml(row.store || "-")} ${escapeHtml(row.room || "")}</td><td>${escapeHtml(row.plan || "-")}</td><td><strong>${yen(row.price)}</strong></td><td><span class="status-chip">${escapeHtml(row.status || "予約中")}</span></td></tr>`).join("") || '<tr><td colspan="7" class="empty-cell">DBに予約データがありません</td></tr>';
+  adminScreen("予約管理", `予約件数: ${reservations.length}件 / 売上: ${yen(sales)}`, `<div class="admin-kpi-grid"><article><span>予約件数</span><strong>${reservations.length}</strong></article><article><span>有効予約</span><strong>${active.length}</strong></article><article><span>売上</span><strong>${yen(sales)}</strong></article></div><div class="admin-table-card"><table class="admin-data-table"><thead><tr><th>予約ID</th><th>会員</th><th>日時</th><th>店舗・ルーム</th><th>プラン</th><th>支払額</th><th>状態</th></tr></thead><tbody>${rows}</tbody></table></div>`);
+};
+
+renderAnalytics = function renderAnalyticsFromDatabase() {
+  const { reservations } = adminData();
+  const byDate = new Map();
+  reservations.filter((row) => row.status !== "キャンセル").forEach((row) => {
+    const item = byDate.get(row.date) || { count: 0, sales: 0 };
+    item.count += 1; item.sales += Number(row.price || 0); byDate.set(row.date, item);
+  });
+  const rows = [...byDate.entries()].sort(([left], [right]) => String(right).localeCompare(String(left))).map(([date, item]) => `<tr><td>${escapeHtml(date)}</td><td>${item.count}件</td><td>${yen(item.sales)}</td></tr>`).join("") || '<tr><td colspan="3" class="empty-cell">集計対象の予約がありません</td></tr>';
+  adminScreen("売上分析", "予約DBを日付ごとに集計しています", `<div class="admin-table-card"><table class="admin-data-table"><thead><tr><th>利用日</th><th>予約件数</th><th>売上</th></tr></thead><tbody>${rows}</tbody></table></div>`);
+};
+
+renderNoticeAdmin = function renderNoticesFromDatabase() {
+  const { notices } = adminData();
+  const rows = notices.map((notice) => `<article class="admin-notice-item"><time>${escapeHtml(notice.date)}</time><h3>${escapeHtml(notice.title)}</h3><p>${escapeHtml(notice.body)}</p></article>`).join("") || '<p class="empty-cell">DBにお知らせがありません</p>';
+  adminScreen("お知らせ", `登録件数: ${notices.length}件`, `<div class="admin-notice-list">${rows}</div>`);
+};

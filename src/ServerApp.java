@@ -171,6 +171,20 @@ public class ServerApp {
                     GROUP BY partner_name
                     ORDER BY id
                     """, ServerApp::partnerJson)
+                + ",\"customers\":" + queryArray(conn, """
+                    SELECT COALESCE(external_customer_id, 'customer_' || customer_id) AS id,
+                           COALESCE(customer_code, 'customer_' || customer_id) AS customer_code,
+                           display_name,
+                           email,
+                           partner_name,
+                           vip_rank,
+                           is_vip,
+                           invitation_status,
+                           frequency,
+                           created_at
+                    FROM customers
+                    ORDER BY customer_id
+                    """, ServerApp::customerJson)
                 + ",\"partnerCustomers\":" + queryArray(conn, """
                     SELECT COALESCE(external_customer_id, 'c' || customer_id) AS id,
                            display_name AS name,
@@ -255,6 +269,20 @@ public class ServerApp {
         first = pair(sb, "amountLabel", rs.getString("amount_label"), first);
         first = numberPair(sb, "weekdayIdleRate", rs.getInt("weekday_idle_rate"), first);
         numberPair(sb, "continuousMonths", rs.getInt("continuous_months"), first);
+    }
+
+    private static void customerJson(ResultSet rs, StringBuilder sb) throws SQLException {
+        boolean first = true;
+        first = pair(sb, "id", rs.getString("id"), first);
+        first = pair(sb, "code", rs.getString("customer_code"), first);
+        first = pair(sb, "name", rs.getString("display_name"), first);
+        first = pair(sb, "email", rs.getString("email"), first);
+        first = pair(sb, "partner", rs.getString("partner_name"), first);
+        first = pair(sb, "vipRank", rs.getString("vip_rank"), first);
+        first = boolPair(sb, "vip", rs.getInt("is_vip") == 1, first);
+        first = pair(sb, "invitationStatus", rs.getString("invitation_status"), first);
+        first = numberPair(sb, "visits", rs.getInt("frequency"), first);
+        pair(sb, "createdAt", safeDate(rs.getString("created_at")), first);
     }
 
     private static void slotJson(ResultSet rs, StringBuilder sb) throws SQLException {
