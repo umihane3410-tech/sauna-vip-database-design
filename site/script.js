@@ -16,9 +16,9 @@ const defaultState = {
     notifications: true
   },
   partners: [
-    { id: "p1", name: "スマイルイノベーション矯正歯科", code: "SMILE-VIP-001", target: "格闘家、ボディビルダー", criterion: "直近3ヶ月以内 / 月1回以上を半年継続 / 自由診療累計100万円以上" },
-    { id: "p2", name: "国際自動車株式会社", code: "KM-VIP-002", target: "大企業役員、オーナー経営者、投資家", criterion: "直近1週間以内 / 月12回以上 / 月間決済額10万円以上" },
-    { id: "p3", name: "高級パーソナルジム", code: "GYM-VIP-003", target: "経営者、医師、美容・健康感度の高い富裕層", criterion: "直近1週間以内 / 月8回以上 / 平日6:00-15:00利用50%以上 / 月額10万円以上" }
+    { id: "p1", name: "スマイルイノベーション矯正歯科", code: "SMILE-VIP-001", target: "格闘家、ボディビルダー", criterion: "提携先内でRFMを順位化し、合計順位スコア上位5%をVIP抽出" },
+    { id: "p2", name: "国際自動車株式会社", code: "KM-VIP-002", target: "大企業役員、オーナー経営者、投資家", criterion: "提携先内でRFMを順位化し、合計順位スコア上位5%をVIP抽出" },
+    { id: "p3", name: "高級パーソナルジム", code: "GYM-VIP-003", target: "経営者、医師、美容・健康感度の高い富裕層", criterion: "提携先内でRFMを順位化し、合計順位スコア上位5%をVIP抽出" }
   ],
   partnerCustomers: [
     { id: "c1", name: "山田 太郎", partner: "国際自動車株式会社", segment: "オーナー経営者", recentDays: 3, frequency: 12, amount: 150000, amountLabel: "月間決済額", weekdayIdleRate: 45, continuousMonths: 0 },
@@ -37,7 +37,7 @@ const defaultState = {
     { id: "r1", userName: "山田 太郎", email: "user@example.com", partner: "国際自動車株式会社", store: "津田沼店", room: "Room A", date: "2026-06-10", time: "平日 6:20", plan: "90分 Secret Sauna", price: 9800, status: "来店済み", createdAt: "2026-06-01" }
   ],
   notices: [
-    { id: "n1", title: "シークレット枠のご案内", body: "平日6:20から15:10までのアイドルタイムを、提携先別VIP基準を満たした方だけに公開しました。", date: "2026-06-14" }
+    { id: "n1", title: "シークレット枠のご案内", body: "平日6:20から15:10までのアイドルタイムを、提携先内RFM順位で上位5%に入った方だけに公開しました。", date: "2026-06-14" }
   ],
   bookingDraft: {}
 };
@@ -117,33 +117,7 @@ function showToast(message, type = "success") {
 }
 
 function calculateVipEligibility(customer) {
-  const rules = {
-    "スマイルイノベーション矯正歯科": [
-      { key: "r", label: "直近3ヶ月以内の来院履歴", passed: customer.recentDays <= 90 },
-      { key: "f", label: "月1回以上の自費ケアを半年以上継続", passed: customer.frequency >= 1 && customer.continuousMonths >= 6 },
-      { key: "m", label: "自由診療累計100万円以上", passed: customer.amount >= 1000000 }
-    ],
-    "国際自動車株式会社": [
-      { key: "r", label: "直近1週間以内の配車・乗車履歴", passed: customer.recentDays <= 7 },
-      { key: "f", label: "月12回以上の乗車実績", passed: customer.frequency >= 12 },
-      { key: "m", label: "月間決済額10万円以上", passed: customer.amount >= 100000 }
-    ],
-    "高級パーソナルジム": [
-      { key: "r", label: "直近1週間以内のトレーニング履歴", passed: customer.recentDays <= 7 },
-      { key: "f", label: "月8回以上かつ平日6:00-15:00利用50%以上", passed: customer.frequency >= 8 && customer.weekdayIdleRate >= 50 },
-      { key: "m", label: "月会費・指名料など月額10万円以上", passed: customer.amount >= 100000 }
-    ]
-  };
-  const checks = rules[customer.partner] || [];
-  const passedCount = checks.filter((check) => check.passed).length;
-  return {
-    checks,
-    passedCount,
-    totalCount: checks.length,
-    rank: passedCount === checks.length ? "S" : passedCount >= Math.max(1, checks.length - 1) ? "A" : passedCount >= 1 ? "B" : "C",
-    scoreLabel: `${passedCount}/${checks.length}基準達成`,
-    isVip: checks.length > 0 && passedCount === checks.length
-  };
+  return calculateRfmVipEligibility(customer);
 }
 
 function getVipPipelineStats() {
@@ -627,7 +601,7 @@ function renderInvitation() {
   screenHtml("シークレット招待", "VIP判定された顧客だけに表示される招待画面です。", `
     <div class="card">
       <h3>${state.vipUser.invited ? "あなたはシークレット枠に招待されています" : "現在、招待はありません"}</h3>
-      <p>${state.vipUser.invited ? state.vipUser.invitationReason : "提携先データのスコア条件を満たすと招待が表示されます。"}</p>
+      <p>${state.vipUser.invited ? state.vipUser.invitationReason : "提携先内RFM順位の上位5%に入ると招待が表示されます。"}</p>
       <button class="primary-button" type="button" ${state.vipUser.invited ? "onclick=\"goToPage('booking')\"" : "disabled"}>予約フォームへ</button>
     </div>
   `);
@@ -639,7 +613,7 @@ function renderBooking() {
       <div class="card invite-locked-card">
         <span class="badge">未招待</span>
         <h3>シークレット枠への招待が必要です</h3>
-        <p>提携先から連携された顧客データを管理者がRFM分析で判定し、基準を満たした場合のみ招待が送信されます。</p>
+        <p>提携先から連携された顧客データを管理者がRFM順位で判定し、提携先内の上位5%に入った場合のみ招待が送信されます。</p>
         <button class="secondary-button" type="button" onclick="goToPage('invitation')">招待状況を確認</button>
       </div>
     `);
@@ -852,7 +826,7 @@ function renderSystemOverview() {
   screenHtml("システム概要", "ブランド価値を下げずにアイドルタイムを自動収益化する仕組みです。", `
     <div class="admin-feature-grid">
       <div class="admin-feature-card"><span>01</span><h3>顧客データ連携</h3><p>提携先の既存顧客データを連携し、平日日中に動ける富裕層を抽出します。</p></div>
-      <div class="admin-feature-card"><span>02</span><h3>提携先別VIP判定</h3><p>歯科、国際自動車、高級ジムごとに異なるRFM基準でブランドに合う顧客だけを判定します。</p></div>
+      <div class="admin-feature-card"><span>02</span><h3>提携先別VIP判定</h3><p>提携先ごとにRFMを順位付けし、合計順位スコア上位5%の顧客だけを判定します。</p></div>
       <div class="admin-feature-card"><span>03</span><h3>シークレット枠招待</h3><p>平日6:20から15:10のアイドルタイム枠を、招待済みVIPだけに公開します。</p></div>
       <div class="admin-feature-card"><span>04</span><h3>収益還元</h3><p>予約後に来店済みとなった実績だけを対象に、提携先へ10%の紹介手数料を自動計算します。</p></div>
     </div>
@@ -926,11 +900,11 @@ function renderAnalytics() {
 
 function renderScoring() {
   const stats = getVipPipelineStats();
-  screenHtml("VIPスコアリング", "提携先DBの顧客データを連携し、RFMベースの独自基準でランク付けします。", `
+  screenHtml("VIPスコアリング", "提携先DBの顧客データを連携し、提携先ごとのRFM順位と合計順位スコアでランク付けします。", `
     <div class="vip-pipeline-grid">
       <div class="vip-pipeline-card"><span>連携顧客DB</span><strong>${stats.total}件</strong><p>提携先から提供された顧客データ</p></div>
       <div class="vip-pipeline-card"><span>VIP候補</span><strong>${stats.rankS + stats.rankA}件</strong><p>S/Aランクの優良候補</p></div>
-      <div class="vip-pipeline-card"><span>招待可能</span><strong>${stats.vip}件</strong><p>全基準を満たしたSランク顧客</p></div>
+      <div class="vip-pipeline-card"><span>招待可能</span><strong>${stats.vip}件</strong><p>上位5%のSランク顧客</p></div>
       <div class="vip-pipeline-card"><span>招待送信済み</span><strong>${stats.invited}件</strong><p>予約画面アクセス許可済み</p></div>
     </div>
     ${customerTable(true)}
@@ -940,14 +914,14 @@ function renderScoring() {
 function customerTable(showInvite) {
   return emptyMessage(state.partnerCustomers, `
     <div class="table-wrap"><table>
-      <thead><tr><th>顧客名</th><th>提携先</th><th>顧客層</th><th>最新利用日</th><th>頻度</th><th>決済額</th><th>追加条件</th><th>ランク</th><th>基準達成</th><th>VIP判定</th><th>操作</th></tr></thead>
+      <thead><tr><th>顧客名</th><th>提携先</th><th>顧客層</th><th>最新利用日</th><th>頻度</th><th>決済額</th><th>追加条件</th><th>ランク</th><th>RFM順位</th><th>VIP判定</th><th>操作</th></tr></thead>
       <tbody>${state.partnerCustomers.map((c) => {
         const score = calculateVipEligibility(c);
         return `<tr>
           <td>${c.name}</td><td>${c.partner}</td><td>${c.segment || "-"}</td><td>${c.recentDays}日前</td><td>月${c.frequency}回</td><td>${c.amountLabel || "決済額"}<br>${formatYen(c.amount)}</td>
           <td>${c.partner === "高級パーソナルジム" ? `平日昼利用 ${c.weekdayIdleRate}%` : c.partner === "スマイルイノベーション矯正歯科" ? `継続 ${c.continuousMonths}ヶ月` : "-"}</td>
           <td><span class="rank-badge rank-${score.rank.toLowerCase()}">${score.rank}</span></td>
-          <td>${score.scoreLabel}<br><span class="muted">${score.checks.map((check) => `${check.passed ? "OK" : "NG"} ${check.label}`).join("<br>")}</span></td>
+          <td>${score.scoreLabel}<br><span class="muted">${score.checks.map((check) => check.label).join("<br>")}</span></td>
           <td><span class="badge ${score.isVip ? "gold" : ""}">${score.isVip ? "シークレット招待可能" : "通常"}</span></td>
           <td>${showInvite && score.isVip ? `<button class="primary-button" onclick="sendInvitation('${c.id}')">招待送信</button>` : "-"}</td>
         </tr>`;
@@ -963,7 +937,7 @@ function sendInvitation(customerId) {
   state.vipUser.name = customer.name;
   state.vipUser.partner = customer.partner;
   state.vipUser.vipScore = score.scoreLabel;
-  state.vipUser.invitationReason = `${customer.partner}の提携先別VIP抽出基準をすべて満たしたため、シークレット枠へ招待されました。`;
+  state.vipUser.invitationReason = `${customer.partner}の顧客DB内でRFM合計順位スコアが上位5%に入ったため、シークレット枠へ招待されました。`;
   saveState();
   showToast(`${customer.name}さんへシークレット招待を送信しました。`);
   renderShell();
@@ -1404,7 +1378,7 @@ function renderAdminMenu() {
         <h3>VIP抽出から予約までの流れ</h3>
         <div class="admin-flow-grid">
           <div><b>1</b><strong>顧客DB連携</strong><p>提携先の既存顧客データを取り込みます。</p></div>
-          <div><b>2</b><strong>RFMランク判定</strong><p>提携先ごとの基準でS/A/B/Cに分類します。</p></div>
+          <div><b>2</b><strong>RFMランク判定</strong><p>提携先ごとのRFM順位と上位5%抽出でS/A/B/Cに分類します。</p></div>
           <div><b>3</b><strong>シークレット招待</strong><p>Sランクの顧客だけに招待を送信します。</p></div>
           <div><b>4</b><strong>予約と還元</strong><p>来店済み予約だけ10%の報酬対象にします。</p></div>
         </div>
@@ -1527,44 +1501,122 @@ function renderAnalytics() {
 
 adminNavItems.splice(2, 0, ["scoring", "VIP自動抽出"]);
 
-function calculateVipEligibility(customer) {
-  const partnerType = customer.id === "c3" ? "smile" : ["c1", "c4"].includes(customer.id) ? "kokusai" : "gym";
-  const rules = {
-    smile: [
-      { label: "直近3ヶ月以内の来院履歴", passed: customer.recentDays <= 90 },
-      { label: "月1回以上の自費ケアを半年以上継続", passed: customer.frequency >= 1 && customer.continuousMonths >= 6 },
-      { label: "自由診療の累計決済100万円以上", passed: customer.amount >= 1000000 }
-    ],
-    kokusai: [
-      { label: "直近1週間以内の配車・乗車履歴", passed: customer.recentDays <= 7 },
-      { label: "月12回以上の乗車実績", passed: customer.frequency >= 12 },
-      { label: "月間決済額10万円以上", passed: customer.amount >= 100000 }
-    ],
-    gym: [
-      { label: "直近1週間以内のトレーニング履歴", passed: customer.recentDays <= 7 },
-      { label: "月8回以上かつ平日6:00-15:00利用50%以上", passed: customer.frequency >= 8 && customer.weekdayIdleRate >= 50 },
-      { label: "月会費・指名料など月額10万円以上", passed: customer.amount >= 100000 }
-    ]
-  };
-  const checks = rules[partnerType];
-  const passedCount = checks.filter((check) => check.passed).length;
+function getCustomerKey(customer) {
+  return customer?.id || `${customer?.partner || ""}:${customer?.name || ""}:${customer?.email || ""}`;
+}
+
+function numericValue(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function rankCustomers(customers, valueGetter, direction = "desc") {
+  const sorted = [...customers].sort((a, b) => {
+    const left = valueGetter(a);
+    const right = valueGetter(b);
+    if (left === right) return getCustomerKey(a).localeCompare(getCustomerKey(b), "ja");
+    return direction === "asc" ? left - right : right - left;
+  });
+  const ranks = new Map();
+  let previousValue;
+  let currentRank = 0;
+  sorted.forEach((item, index) => {
+    const value = valueGetter(item);
+    if (index === 0 || value !== previousValue) {
+      currentRank = index + 1;
+      previousValue = value;
+    }
+    ranks.set(getCustomerKey(item), currentRank);
+  });
+  return ranks;
+}
+
+function calculatePartnerRfmRows(partnerName) {
+  const partnerCustomers = state.partnerCustomers.filter((item) => item.partner === partnerName);
+  const count = partnerCustomers.length;
+  if (!count) return [];
+
+  const recencyRanks = rankCustomers(partnerCustomers, (item) => numericValue(item.recentDays, 999), "asc");
+  const frequencyRanks = rankCustomers(partnerCustomers, (item) => numericValue(item.frequency), "desc");
+  const monetaryRanks = rankCustomers(partnerCustomers, (item) => numericValue(item.amount), "desc");
+
+  return partnerCustomers
+    .map((item) => {
+      const key = getCustomerKey(item);
+      const recencyRank = recencyRanks.get(key) || count;
+      const frequencyRank = frequencyRanks.get(key) || count;
+      const monetaryRank = monetaryRanks.get(key) || count;
+      const recencyScore = count - recencyRank + 1;
+      const frequencyScore = count - frequencyRank + 1;
+      const monetaryScore = count - monetaryRank + 1;
+      return {
+        customer: item,
+        key,
+        count,
+        recencyRank,
+        frequencyRank,
+        monetaryRank,
+        recencyScore,
+        frequencyScore,
+        monetaryScore,
+        totalScore: recencyScore + frequencyScore + monetaryScore
+      };
+    })
+    .sort((a, b) => {
+      if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+      const aRankSum = a.recencyRank + a.frequencyRank + a.monetaryRank;
+      const bRankSum = b.recencyRank + b.frequencyRank + b.monetaryRank;
+      if (aRankSum !== bRankSum) return aRankSum - bRankSum;
+      return a.key.localeCompare(b.key, "ja");
+    })
+    .map((item, index) => ({ ...item, totalRank: index + 1 }));
+}
+
+function calculateRfmVipEligibility(customer) {
+  if (!customer) {
+    return { checks: [], passedCount: 0, totalCount: 3, rank: "C", scoreLabel: "RFM順位未算出", isVip: false };
+  }
+
+  const rows = calculatePartnerRfmRows(customer.partner);
+  const current = rows.find((item) => item.key === getCustomerKey(customer));
+  if (!current) {
+    return { checks: [], passedCount: 0, totalCount: 3, rank: "C", scoreLabel: "RFM順位未算出", isVip: false };
+  }
+
+  const vipCutoff = Math.max(1, Math.ceil(current.count * 0.05));
+  const top20Cutoff = Math.max(vipCutoff, Math.ceil(current.count * 0.2));
+  const top50Cutoff = Math.max(top20Cutoff, Math.ceil(current.count * 0.5));
+  const isVip = current.totalRank <= vipCutoff;
+  const rank = isVip ? "S" : current.totalRank <= top20Cutoff ? "A" : current.totalRank <= top50Cutoff ? "B" : "C";
+  const topPercent = Math.ceil((current.totalRank / current.count) * 100);
+
   return {
-    checks,
-    passedCount,
-    totalCount: checks.length,
-    rank: passedCount === checks.length ? "S" : passedCount === 2 ? "A" : passedCount === 1 ? "B" : "C",
-    scoreLabel: `${passedCount}/${checks.length}基準達成`,
-    isVip: passedCount === checks.length
+    checks: [
+      { label: `R ${current.recencyRank}/${current.count}位（直近${customer.recentDays}日前）` },
+      { label: `F ${current.frequencyRank}/${current.count}位（月${customer.frequency}回）` },
+      { label: `M ${current.monetaryRank}/${current.count}位（${yen(customer.amount)}）` }
+    ],
+    passedCount: isVip ? 3 : 0,
+    totalCount: 3,
+    rank,
+    scoreLabel: `総合${current.totalRank}/${current.count}位・上位${topPercent}%`,
+    isVip,
+    rfmScore: current.totalScore,
+    vipCutoff
   };
+}
+
+function calculateVipEligibility(customer) {
+  return calculateRfmVipEligibility(customer);
 }
 
 function renderScoring() {
   const stats = getVipPipelineStats();
-  screenHtml("VIP自動抽出", "提携先から連携した顧客DBをRFM基準でランク付けし、Sランクだけにシークレット招待を送信します。", `
+  screenHtml("VIP自動抽出", "提携先ごとにRFMを順位付けし、合計順位スコア上位5%のSランク顧客だけにシークレット招待を送信します。", `
     <div class="vip-pipeline-grid">
       <div class="vip-pipeline-card"><span>顧客DB</span><strong>${stats.total}件</strong><p>提携先から連携済み</p></div>
       <div class="vip-pipeline-card"><span>SランクVIP</span><strong>${stats.vip}件</strong><p>招待可能な顧客</p></div>
-      <div class="vip-pipeline-card"><span>Aランク候補</span><strong>${stats.rankA}件</strong><p>条件あと1つでVIP</p></div>
+      <div class="vip-pipeline-card"><span>Aランク候補</span><strong>${stats.rankA}件</strong><p>上位20%圏内の候補</p></div>
       <div class="vip-pipeline-card"><span>招待送信済み</span><strong>${stats.invited}件</strong><p>予約画面アクセス許可済み</p></div>
     </div>
     ${customerTable(true)}
@@ -1575,7 +1627,7 @@ function customerTable(showInvite) {
   return emptyMessage(state.partnerCustomers, `
     <div class="admin-table-card"><table class="admin-data-table scoring-table">
       <thead>
-        <tr><th>顧客名</th><th>提携先</th><th>顧客層</th><th>最新利用日</th><th>頻度</th><th>決済額</th><th>追加条件</th><th>ランク</th><th>基準達成</th><th>VIP判定</th><th>操作</th></tr>
+        <tr><th>顧客名</th><th>提携先</th><th>顧客層</th><th>最新利用日</th><th>頻度</th><th>決済額</th><th>追加条件</th><th>ランク</th><th>RFM順位</th><th>VIP判定</th><th>操作</th></tr>
       </thead>
       <tbody>${state.partnerCustomers.map((customer) => {
         const score = calculateVipEligibility(customer);
@@ -1588,7 +1640,7 @@ function customerTable(showInvite) {
           <td>${customer.amountLabel || "決済額"}<br><strong>${yen(customer.amount)}</strong></td>
           <td>${customer.id === "c2" || customer.id === "c5" ? `平日昼利用 ${customer.weekdayIdleRate}%` : customer.id === "c3" ? `継続 ${customer.continuousMonths}ヶ月` : "-"}</td>
           <td><span class="rank-badge rank-${score.rank.toLowerCase()}">${score.rank}</span></td>
-          <td>${score.scoreLabel}<br><span class="muted">${score.checks.map((check) => `${check.passed ? "OK" : "NG"} ${check.label}`).join("<br>")}</span></td>
+          <td>${score.scoreLabel}<br><span class="muted">${score.checks.map((check) => check.label).join("<br>")}</span></td>
           <td><span class="${score.isVip ? "vip-chip" : "status-chip"}">${score.isVip ? "招待可能" : "通常"}</span></td>
           <td>${showInvite && score.isVip ? `<button class="primary-button" onclick="sendInvitation('${customer.id}')">招待送信</button>` : "-"}</td>
         </tr>`;
@@ -1606,7 +1658,7 @@ function sendInvitation(customerId) {
   state.vipUser.name = customer.name;
   state.vipUser.partner = customer.partner;
   state.vipUser.vipScore = `VIPランク ${score.rank} / ${score.scoreLabel}`;
-  state.vipUser.invitationReason = `${customer.partner}の顧客DBで、RFM基準をすべて満たしたSランク顧客として判定されたため、シークレット枠へ招待されました。`;
+  state.vipUser.invitationReason = `${customer.partner}の顧客DB内でRFM合計順位スコアが上位5%に入り、Sランク顧客として判定されたため、シークレット枠へ招待されました。`;
   saveState();
   showToast(`${customer.name}さんへシークレット招待を送信しました。`);
   renderShell();
@@ -2079,7 +2131,7 @@ function renderMemberMenu() {
             <span class="vip-badge subtle">INVITED GUEST</span>
           </div>
           <h2>${profile.name}様、特別招待枠へようこそ</h2>
-          <p>提携先データのRFM判定により、PRIVATE SAUNA KONOSUのシークレット枠へ招待されています。</p>
+          <p>提携先内RFM順位の上位5%判定により、PRIVATE SAUNA KONOSUのシークレット枠へ招待されています。</p>
         </section>
       ` : `
         <section class="general-locked-hero">
@@ -2153,7 +2205,7 @@ function renderVipLockedPage() {
       <p>${profile.name}様の現在のアカウントでは、シークレット枠予約とマイ予約はご利用いただけません。</p>
       <div class="vip-locked-card">
         <h3>VIP会員になると予約機能をご利用いただけます</h3>
-        <p>提携先の顧客データをもとにRFM判定が行われ、基準を満たしたお客様にだけ特別招待が届きます。</p>
+        <p>提携先の顧客データをもとにRFM順位判定が行われ、上位5%のお客様にだけ特別招待が届きます。</p>
       </div>
       <button class="primary-button" type="button" onclick="goToPage('memberMenu')">メニューへ戻る</button>
     </section>
@@ -2166,7 +2218,7 @@ function renderInvitation() {
     <section class="${profile.vip ? "vip-invitation-page" : "vip-locked-page"}">
       <span class="${profile.vip ? "vip-badge" : "standard-badge"}">${profile.vip ? "INVITED GUEST" : "VIP LIMITED"}</span>
       <h2>${profile.vip ? "あなたはシークレット枠に招待されています" : "現在、VIP招待はありません"}</h2>
-      <p>${profile.vip ? "提携先データのRFM判定でVIP基準を満たしたため、シークレット枠をご案内しています。" : "VIP会員限定サービスです。招待された会員のみ予約機能をご利用いただけます。"}</p>
+      <p>${profile.vip ? "提携先内RFM順位で上位5%に入ったため、シークレット枠をご案内しています。" : "VIP会員限定サービスです。招待された会員のみ予約機能をご利用いただけます。"}</p>
       <button class="primary-button" type="button" ${profile.vip ? "onclick=\"goToPage('booking')\"" : "onclick=\"goToPage('memberMenu')\""}>${profile.vip ? "予約フォームへ" : "メニューへ戻る"}</button>
     </section>
   `;
@@ -2192,7 +2244,7 @@ renderBooking = function renderBooking() {
         </div>
         <div class="vip-booking-note">
           <strong>INVITED GUEST ONLY</strong>
-          <p>この予約枠は一般公開されていません。提携先データのVIP判定を通過した会員だけに表示されます。</p>
+          <p>この予約枠は一般公開されていません。提携先内RFM順位の上位5%に入った会員だけに表示されます。</p>
         </div>
         <button class="primary-button" type="submit">予約内容を確認する</button>
       </form>

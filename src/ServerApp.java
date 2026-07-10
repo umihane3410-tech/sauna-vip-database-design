@@ -161,14 +161,14 @@ public class ServerApp {
         try (Connection conn = connect()) {
             String json = "{"
                 + "\"partners\":" + queryArray(conn, """
-                    SELECT COALESCE(partner_code, 'p' || MIN(customer_id)) AS id,
+                    SELECT COALESCE(MAX(partner_code), 'p' || MIN(customer_id)) AS id,
                            partner_name AS name,
                            COALESCE(MAX(referral_code), '') AS code,
                            COALESCE(MAX(partner_target), '') AS target,
                            COALESCE(MAX(partner_criterion), '') AS criterion
                     FROM customers
                     WHERE partner_name IS NOT NULL
-                    GROUP BY partner_code, partner_name
+                    GROUP BY partner_name
                     ORDER BY id
                     """, ServerApp::partnerJson)
                 + ",\"partnerCustomers\":" + queryArray(conn, """

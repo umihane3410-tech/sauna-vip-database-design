@@ -11,6 +11,20 @@ SELECT
 FROM customers
 ORDER BY is_vip DESC, vip_rank, customer_id;
 
+SELECT
+    partner_name,
+    external_customer_id,
+    customer_name,
+    rank,
+    is_vip,
+    recency_rank,
+    frequency_rank,
+    monetary_rank,
+    total_rank,
+    total_score
+FROM vip_candidates
+ORDER BY partner_name, total_rank;
+
 SELECT * FROM reservation_summary ORDER BY reservation_id DESC;
 
 SELECT

@@ -92,19 +92,67 @@ DROP VIEW IF EXISTS vip_candidates;
 DROP VIEW IF EXISTS reservation_summary;
 
 CREATE VIEW IF NOT EXISTS vip_candidates AS
+WITH ranked AS (
+    SELECT
+        partner_name,
+        referral_code,
+        external_customer_id,
+        display_name AS customer_name,
+        segment,
+        recent_days,
+        frequency AS monthly_frequency,
+        total_amount,
+        COUNT(*) OVER (PARTITION BY partner_name) AS partner_count,
+        RANK() OVER (PARTITION BY partner_name ORDER BY recent_days ASC) AS recency_rank,
+        RANK() OVER (PARTITION BY partner_name ORDER BY frequency DESC) AS frequency_rank,
+        RANK() OVER (PARTITION BY partner_name ORDER BY total_amount DESC) AS monetary_rank
+    FROM customers
+    WHERE external_customer_id IS NOT NULL
+),
+scored AS (
+    SELECT
+        *,
+        (partner_count - recency_rank + 1)
+        + (partner_count - frequency_rank + 1)
+        + (partner_count - monetary_rank + 1) AS total_score
+    FROM ranked
+),
+ranked_total AS (
+    SELECT
+        *,
+        RANK() OVER (
+            PARTITION BY partner_name
+            ORDER BY total_score DESC,
+                     (recency_rank + frequency_rank + monetary_rank) ASC,
+                     external_customer_id ASC
+        ) AS total_rank
+    FROM scored
+)
 SELECT
     partner_name,
     referral_code,
     external_customer_id,
-    display_name AS customer_name,
+    customer_name,
     segment,
     recent_days,
-    frequency AS monthly_frequency,
+    monthly_frequency,
     total_amount,
-    vip_rank AS rank,
-    is_vip
-FROM customers
-WHERE external_customer_id IS NOT NULL;
+    CASE
+        WHEN total_rank <= CAST(((partner_count + 19) / 20) AS INTEGER) THEN 'S'
+        WHEN total_rank <= CAST(((partner_count + 4) / 5) AS INTEGER) THEN 'A'
+        WHEN total_rank <= CAST(((partner_count + 1) / 2) AS INTEGER) THEN 'B'
+        ELSE 'C'
+    END AS rank,
+    CASE
+        WHEN total_rank <= CAST(((partner_count + 19) / 20) AS INTEGER) THEN 1
+        ELSE 0
+    END AS is_vip,
+    recency_rank,
+    frequency_rank,
+    monetary_rank,
+    total_rank,
+    total_score
+FROM ranked_total;
 
 CREATE VIEW IF NOT EXISTS reservation_summary AS
 SELECT
