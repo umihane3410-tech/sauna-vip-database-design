@@ -27,12 +27,15 @@ async function apiRequest(path, data = null) {
 function mergeServerState(payload) {
   if (!payload || typeof state === "undefined") return;
 
-  state.partners = payload.partners?.length ? payload.partners : state.partners;
-  state.dbCustomers = Array.isArray(payload.customers) ? payload.customers : [];
-  state.partnerCustomers = payload.partnerCustomers?.length ? payload.partnerCustomers : state.partnerCustomers;
-  state.slots = payload.slots?.length ? payload.slots : state.slots;
-  state.reservations = payload.reservations?.length ? payload.reservations : state.reservations;
-  state.notices = payload.notices?.length ? payload.notices : state.notices;
+  if (Array.isArray(payload.partners)) state.partners = payload.partners;
+  if (Array.isArray(payload.customers)) {
+    state.customers = payload.customers;
+    state.dbCustomers = payload.customers;
+  }
+  if (Array.isArray(payload.partnerCustomers)) state.partnerCustomers = payload.partnerCustomers;
+  if (Array.isArray(payload.slots)) state.slots = payload.slots;
+  if (Array.isArray(payload.reservations)) state.reservations = payload.reservations;
+  if (Array.isArray(payload.notices)) state.notices = payload.notices;
   saveState();
   render();
 }
@@ -160,6 +163,7 @@ renderNoticeAdmin = function renderNoticeAdminWithApi() {
 
 hydrateFromDatabase();
 
+if (!window.ADMIN_DB_SCREENS_READY) {
 // The original admin pages are a design prototype with hard-coded rows. These
 // replacements render only the records returned from /api/bootstrap.
 function escapeHtml(value) {
@@ -222,3 +226,4 @@ renderNoticeAdmin = function renderNoticesFromDatabase() {
   const rows = notices.map((notice) => `<article class="admin-notice-item"><time>${escapeHtml(notice.date)}</time><h3>${escapeHtml(notice.title)}</h3><p>${escapeHtml(notice.body)}</p></article>`).join("") || '<p class="empty-cell">DBにお知らせがありません</p>';
   adminScreen("お知らせ", `登録件数: ${notices.length}件`, `<div class="admin-notice-list">${rows}</div>`);
 };
+}

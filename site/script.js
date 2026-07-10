@@ -2427,4 +2427,439 @@ render = function render() {
   updateBackButtonVisibility();
 };
 
+// =========================================================
+// Admin DB-backed screens
+// =========================================================
+const ADMIN_DB_STATUS_RESERVED = "\u4e88\u7d04\u4e2d";
+const ADMIN_DB_STATUS_VISITED = "\u6765\u5e97\u6e08\u307f";
+const ADMIN_DB_STATUS_CANCELED = "\u30ad\u30e3\u30f3\u30bb\u30eb";
+const ADMIN_DB_PARTNER_UNSET = "\u672a\u8a2d\u5b9a";
+window.ADMIN_DB_SCREENS_READY = true;
+
+function adminDbEscape(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function adminDbText(value, fallback = "-") {
+  const text = value === undefined || value === null || value === "" ? fallback : value;
+  return adminDbEscape(text);
+}
+
+function adminDbYen(value) {
+  return `\u00a5${Number(value || 0).toLocaleString("ja-JP")}`;
+}
+
+function adminDbArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function getAdminCustomerSource() {
+  if (Array.isArray(state.customers)) return state.customers;
+  if (Array.isArray(state.dbCustomers)) return state.dbCustomers;
+  return adminDbArray(state.partnerCustomers);
+}
+
+function getAdminReservationSource() {
+  return adminDbArray(state.reservations);
+}
+
+function isCompletedReservation(reservation) {
+  return reservation?.status === ADMIN_DB_STATUS_VISITED || reservation?.status === "visited";
+}
+
+function isCanceledReservation(reservation) {
+  return reservation?.status === ADMIN_DB_STATUS_CANCELED || reservation?.status === "canceled";
+}
+
+function isReservedReservation(reservation) {
+  return reservation?.status === ADMIN_DB_STATUS_RESERVED || reservation?.status === "reserved";
+}
+
+function getReservationMatchesForCustomer(customer) {
+  const email = String(customer.email || "").toLowerCase();
+  const name = String(customer.name || "");
+  return getAdminReservationSource().filter((reservation) => {
+    const reservationEmail = String(reservation.email || "").toLowerCase();
+    return (email && reservationEmail === email) || (name && reservation.userName === name);
+  });
+}
+
+function getDbAdminMembers() {
+  return getAdminCustomerSource().map((customer, index) => {
+    const score = calculateVipEligibility(customer);
+    const reservations = getReservationMatchesForCustomer(customer);
+    const completed = reservations.filter(isCompletedReservation).length;
+    return {
+      id: customer.id || customer.memberNo || `db-member-${index}`,
+      number: customer.memberNo || customer.customerCode || customer.id || `DB-${index + 1}`,
+      name: customer.name || "-",
+      nick: customer.segment || "-",
+      email: customer.email || "-",
+      partner: customer.partner || ADMIN_DB_PARTNER_UNSET,
+      vip: score.isVip,
+      stamp: `${completed % 2}/2`,
+      visits: `${reservations.length}\u56de`,
+      score: score.scoreLabel || "-",
+      invitationStatus: customer.invitationStatus || "-"
+    };
+  });
+}
+
+function getDbAdminReservations() {
+  return getAdminReservationSource().map((reservation, index) => ({
+    id: reservation.id || `db-reservation-${index}`,
+    member: reservation.userName || "-",
+    number: reservation.email || reservation.id || "-",
+    datetime: `${reservation.date || "-"}\n${reservation.time || "-"}`,
+    people: "1\u540d",
+    price: Number(reservation.price || 0),
+    discount: "-",
+    payment: isCanceledReservation(reservation) ? 0 : Number(reservation.price || 0),
+    status: reservation.status || "-",
+    taxi: reservation.partner && reservation.partner !== ADMIN_DB_PARTNER_UNSET ? "\u9023\u643a" : "-",
+    store: reservation.store || "-",
+    room: reservation.room || "-",
+    plan: reservation.plan || "-"
+  }));
+}
+
+function getDbAdminStats() {
+  const reservations = getAdminReservationSource();
+  const today = new Date().toISOString().slice(0, 10);
+  const billable = reservations.filter((reservation) => !isCanceledReservation(reservation));
+  return {
+    members: getAdminCustomerSource().length,
+    reservations: reservations.length,
+    reservationsToday: reservations.filter((reservation) => reservation.date === today).length,
+    completed: reservations.filter(isCompletedReservation).length,
+    reserved: reservations.filter(isReservedReservation).length,
+    canceled: reservations.filter(isCanceledReservation).length,
+    sales: billable.reduce((sum, reservation) => sum + Number(reservation.price || 0), 0),
+    referralCodes: adminDbArray(state.partners).filter((partner) => partner.code).length,
+    notices: adminDbArray(state.notices).length,
+    slots: adminDbArray(state.slots).length
+  };
+}
+
+function getDbSalesRows() {
+  const grouped = new Map();
+  getAdminReservationSource().forEach((reservation) => {
+    const date = reservation.date || (reservation.createdAt || "").slice(0, 10) || "\u65e5\u4ed8\u672a\u8a2d\u5b9a";
+    if (!grouped.has(date)) grouped.set(date, { date, count: 0, billableCount: 0, sales: 0 });
+    const row = grouped.get(date);
+    row.count += 1;
+    if (!isCanceledReservation(reservation)) {
+      row.billableCount += 1;
+      row.sales += Number(reservation.price || 0);
+    }
+  });
+  return Array.from(grouped.values())
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+    .slice(0, 10)
+    .map((row) => ({
+      ...row,
+      average: row.billableCount ? Math.round(row.sales / row.billableCount) : 0
+    }));
+}
+
+function renderAdminMenu() {
+  const stats = getDbAdminStats();
+  document.getElementById("screen").innerHTML = `
+    <section class="admin-menu-page">
+      <div class="admin-page-title">
+        <h2>管理者メニュー</h2>
+        <p>DBに保存されている顧客・予約・告知・枠情報を参照しています。</p>
+      </div>
+      <div class="admin-menu-stats">
+        <article class="admin-mini-stat"><span class="line-icon users"></span><strong>${stats.members}</strong><p>DB顧客数</p></article>
+        <article class="admin-mini-stat"><span class="line-icon calendar"></span><strong>${stats.reservationsToday}</strong><p>本日の予約</p></article>
+        <article class="admin-mini-stat"><span class="line-icon gift"></span><strong>${stats.referralCodes}</strong><p>紹介コード</p></article>
+        <article class="admin-mini-stat"><span class="line-icon notice"></span><strong>${stats.notices}</strong><p>お知らせ</p></article>
+      </div>
+      <div class="admin-card-grid">
+        ${adminMenuCards.map((card) => `
+          <button class="admin-menu-card ${card.color}" type="button" data-page="${card.page}">
+            <div class="admin-card-head">
+              <span class="line-icon ${card.icon}"></span>
+              <div><h3>${card.title}</h3><p>${card.text}</p></div>
+            </div>
+            <div class="admin-card-foot"><span>${card.note}</span><b>&gt;</b></div>
+          </button>
+        `).join("")}
+      </div>
+      <section class="admin-flow-card">
+        <h3>DB参照状況</h3>
+        <div class="admin-flow-grid">
+          <div><b>1</b><strong>顧客</strong><p>${stats.members}件をcustomersから取得</p></div>
+          <div><b>2</b><strong>予約</strong><p>${stats.reservations}件をreservation_summaryから取得</p></div>
+          <div><b>3</b><strong>枠</strong><p>${stats.slots}件をreservation_slotsから取得</p></div>
+          <div><b>4</b><strong>売上</strong><p>${adminDbYen(stats.sales)}を予約データから集計</p></div>
+        </div>
+      </section>
+    </section>
+  `;
+  document.querySelectorAll(".admin-menu-card").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.activePage = button.dataset.page;
+      saveState();
+      renderShell();
+    });
+  });
+}
+
+function renderMembers() {
+  const members = getDbAdminMembers();
+  document.getElementById("screen").innerHTML = `
+    <section class="admin-list-page">
+      <div class="admin-page-title">
+        <h2>会員管理</h2>
+        <p>DB登録会員: ${members.length}名</p>
+      </div>
+      <label class="admin-search-box">
+        <span></span>
+        <input id="memberSearch" placeholder="会員番号、氏名、メール、提携先で検索..." autocomplete="off">
+      </label>
+      <div class="admin-table-card">
+        <table class="admin-data-table">
+          <thead>
+            <tr><th>会員番号</th><th>氏名</th><th>属性</th><th>メール</th><th>提携先</th><th>VIP</th><th>スタンプ</th><th>予約数</th><th>RFM順位</th><th>操作</th></tr>
+          </thead>
+          <tbody id="memberRows">${memberRowsHtml(members)}</tbody>
+        </table>
+      </div>
+    </section>
+  `;
+  document.getElementById("memberSearch").addEventListener("input", (event) => {
+    const keyword = event.target.value.trim().toLowerCase();
+    const filtered = members.filter((member) => `${member.number} ${member.name} ${member.email} ${member.partner} ${member.score}`.toLowerCase().includes(keyword));
+    document.getElementById("memberRows").innerHTML = memberRowsHtml(filtered);
+    attachMemberDetailButtons(filtered);
+  });
+  attachMemberDetailButtons(members);
+}
+
+function attachMemberDetailButtons(members) {
+  document.querySelectorAll(".member-detail-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      const member = members.find((item) => item.id === button.dataset.memberId);
+      showToast(`${member?.name || "会員"}のDB情報を表示しています。`);
+    });
+  });
+}
+
+function memberRowsHtml(members) {
+  if (!members.length) return `<tr><td colspan="10" class="empty-cell">DBに会員データがありません</td></tr>`;
+  return members.map((member) => `
+    <tr>
+      <td>${adminDbText(member.number)}</td>
+      <td>${adminDbText(member.name)}</td>
+      <td>${adminDbText(member.nick)}</td>
+      <td>${adminDbText(member.email)}</td>
+      <td><span class="partner-tag">${adminDbText(member.partner)}</span></td>
+      <td>${member.vip ? `<span class="vip-chip">VIP</span>` : "-"}</td>
+      <td>${adminDbText(member.stamp)}</td>
+      <td>${adminDbText(member.visits)}</td>
+      <td>${adminDbText(member.score)}</td>
+      <td><button class="text-link-button member-detail-button" type="button" data-member-id="${adminDbEscape(member.id)}">詳細</button></td>
+    </tr>
+  `).join("");
+}
+
+function renderReservationAdmin() {
+  const bookings = getDbAdminReservations();
+  const stats = getDbAdminStats();
+  document.getElementById("screen").innerHTML = `
+    <section class="admin-list-page">
+      <div class="admin-page-title">
+        <h2>予約管理</h2>
+        <p>DB予約数: ${stats.reservations}件 / 売上 ${adminDbYen(stats.sales)}</p>
+      </div>
+      <div class="admin-kpi-grid">
+        <article><span>総予約数</span><strong>${stats.reservations}</strong></article>
+        <article><span>来店済み</span><strong class="green-number">${stats.completed}</strong></article>
+        <article><span>予約中</span><strong class="red-number">${stats.reserved}</strong></article>
+        <article><span>総売上</span><strong class="blue-number">${adminDbYen(stats.sales)}</strong></article>
+      </div>
+      <div class="admin-table-card">
+        <table class="admin-data-table">
+          <thead><tr><th>予約ID</th><th>会員</th><th>日時</th><th>店舗/部屋</th><th>人数</th><th>料金</th><th>支払額</th><th>ステータス</th><th>提携</th><th>操作</th></tr></thead>
+          <tbody>
+            ${bookings.length ? bookings.map((booking) => `
+              <tr>
+                <td>${adminDbText(booking.id)}</td>
+                <td>${adminDbText(booking.member)}<br><small>${adminDbText(booking.number)}</small></td>
+                <td>${adminDbEscape(booking.datetime).replace("\n", "<br>")}</td>
+                <td>${adminDbText(booking.store)}<br><small>${adminDbText(booking.room)}</small></td>
+                <td>${adminDbText(booking.people)}</td>
+                <td>${adminDbYen(booking.price)}</td>
+                <td><strong>${adminDbYen(booking.payment)}</strong></td>
+                <td><span class="status-chip ${booking.status === ADMIN_DB_STATUS_VISITED ? "done" : ""}">${adminDbText(booking.status)}</span></td>
+                <td><span class="taxi-chip ${booking.taxi === "-" ? "muted-chip" : ""}">${adminDbText(booking.taxi)}</span></td>
+                <td><button class="row-icon edit" onclick="showToast('予約情報はDBから参照しています。')" type="button"></button><button class="row-icon delete" onclick="showToast('削除APIは未実装です。')" type="button"></button></td>
+              </tr>
+            `).join("") : `<tr><td colspan="10" class="empty-cell">DBに予約データがありません</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+function renderAnalytics() {
+  const stats = getDbAdminStats();
+  const rows = getDbSalesRows();
+  const maxSales = Math.max(...rows.map((row) => row.sales), 1);
+  const averageDaily = rows.length ? Math.round(stats.sales / rows.length) : 0;
+  const forecastTotal = averageDaily * 7;
+  document.getElementById("screen").innerHTML = `
+    <section class="sales-page">
+      <div class="admin-page-title">
+        <h2>売上分析</h2>
+        <p>DB予約データを日別に集計しています。</p>
+      </div>
+      <div class="sales-summary-grid">
+        <article class="sales-summary-card blue"><span class="line-icon users"></span><div><p>総予約数</p><strong>${stats.reservations}</strong><small>reservation_summary</small></div></article>
+        <article class="sales-summary-card green"><span class="sales-dollar">$</span><div><p>総売上</p><strong>${adminDbYen(stats.sales)}</strong><small>キャンセル除外</small></div></article>
+        <article class="sales-summary-card purple"><span class="sales-target"></span><div><p>7日予測</p><strong>${adminDbYen(forecastTotal)}</strong><small>日平均ベース</small></div></article>
+        <article class="sales-summary-card orange"><span class="line-icon chart"></span><div><p>平均日商</p><strong>${adminDbYen(averageDaily)}</strong><small>DB集計</small></div></article>
+      </div>
+      <section class="admin-chart-card admin-sales-card">
+        <h3>日別売上</h3>
+        ${rows.length ? rows.map((row) => `
+          <div class="admin-bar-row"><span>${adminDbText(row.date)}</span><div class="admin-bar-track"><div class="admin-bar-fill" style="width:${Math.max(4, Math.round((row.sales / maxSales) * 100))}%"></div></div><strong>${adminDbYen(row.sales)}</strong></div>
+        `).join("") : `<p>DBに売上集計対象の予約がありません。</p>`}
+      </section>
+      <section class="forecast-table-card">
+        <h3>実績データ</h3>
+        <table>
+          <thead><tr><th>日付</th><th>予約数</th><th>平均単価</th><th>売上</th></tr></thead>
+          <tbody>
+            ${rows.length ? rows.map((row) => `<tr><td>${adminDbText(row.date)}</td><td><span class="blue-pill">${row.count}件</span></td><td><span class="orange-pill">${adminDbYen(row.average)}</span></td><td><span class="green-pill">${adminDbYen(row.sales)}</span></td></tr>`).join("") : `<tr><td colspan="4">DBに予約データがありません</td></tr>`}
+          </tbody>
+        </table>
+        <p class="table-footnote">最新10日分をDBから表示</p>
+      </section>
+    </section>
+  `;
+}
+
+function renderReferralCodes() {
+  const partners = adminDbArray(state.partners);
+  document.getElementById("screen").innerHTML = `
+    <section class="admin-list-page">
+      <div class="admin-page-title with-action">
+        <div><h2>紹介コード管理</h2><p>DB登録: ${partners.length}件</p></div>
+        <button class="admin-create-button" onclick="showToast('紹介コードはDBの提携先データを参照しています。')" type="button">紹介コード確認</button>
+      </div>
+      <div class="admin-table-card">
+        <table class="admin-data-table referral-table">
+          <thead><tr><th>紹介コード</th><th>提携先コード</th><th>提携先名</th><th>抽出基準</th><th>ステータス</th></tr></thead>
+          <tbody>
+            ${partners.length ? partners.map((partner) => `<tr><td><strong>${adminDbText(partner.code || "-")}</strong></td><td>${adminDbText(partner.id)}</td><td>${adminDbText(partner.name)}</td><td>${adminDbText(partner.criterion)}</td><td><span class="green-pill">${partner.code ? "有効" : "未発行"}</span></td></tr>`).join("") : `<tr><td colspan="5" class="empty-cell">DBに提携先データがありません</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+function renderNoticeAdmin() {
+  const notices = adminDbArray(state.notices);
+  document.getElementById("screen").innerHTML = `
+    <section class="admin-list-page">
+      <div class="admin-page-title with-action">
+        <div><h2>お知らせ管理</h2><p>DB登録件数: ${notices.length}件</p></div>
+      </div>
+      <form id="noticeForm" class="card admin-notice-form">
+        <div class="form-row"><label>タイトル</label><input id="noticeTitle" required></div>
+        <div class="form-row"><label>本文</label><textarea id="noticeBody" required></textarea></div>
+        <button class="primary-button" type="submit">お知らせ作成</button>
+      </form>
+      <div class="admin-notice-list">
+        ${notices.length ? notices.map((notice) => `
+          <article class="admin-notice-item">
+            <time>${adminDbText(notice.date)}</time>
+            <h3>${adminDbText(notice.title)}</h3>
+            <p>${adminDbText(notice.body)}</p>
+            <button class="danger-button notice-delete-button" data-notice-id="${adminDbEscape(notice.id)}" type="button">削除</button>
+          </article>
+        `).join("") : `
+          <div class="empty-admin-card">
+            <span class="line-icon notice"></span>
+            <p>DBにお知らせが登録されていません</p>
+          </div>
+        `}
+      </div>
+    </section>
+  `;
+  document.getElementById("noticeForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const title = document.getElementById("noticeTitle").value.trim();
+    const body = document.getElementById("noticeBody").value.trim();
+    if (!title || !body) return showToast("必須項目を入力してください。", "error");
+    state.notices.unshift({ id: createId("n"), title, body, date: new Date().toISOString().slice(0, 10) });
+    saveState();
+    showToast("お知らせを作成しました。");
+    renderShell();
+  });
+  document.querySelectorAll(".notice-delete-button").forEach((button) => {
+    button.addEventListener("click", () => deleteNotice(button.dataset.noticeId));
+  });
+}
+
+function renderSecretSlots() {
+  const slots = adminDbArray(state.slots);
+  document.getElementById("screen").innerHTML = `
+    <section class="booking-form-page">
+      <div class="admin-page-title">
+        <h2>予約枠管理</h2>
+        <p>DB登録枠: ${slots.length}件</p>
+      </div>
+      <form id="slotForm" class="card">
+        <div class="form-grid">
+          <div class="form-row"><label>店舗</label><input id="slotStore" required></div>
+          <div class="form-row"><label>部屋</label><input id="slotRoom" required></div>
+          <div class="form-row"><label>日付</label><input id="slotDate" type="date" required></div>
+          <div class="form-row"><label>時間帯</label><input id="slotTime" placeholder="平日 13:00" required></div>
+          <div class="form-row"><label>価格</label><input id="slotPrice" type="number" required></div>
+          <div class="form-row"><label>公開状態</label><select id="slotPublished"><option value="true">公開</option><option value="false">非公開</option></select></div>
+        </div>
+        <button class="primary-button" type="submit">枠を追加</button>
+      </form>
+      <div style="height:16px"></div>
+      <div class="admin-table-card">
+        <table class="admin-data-table">
+          <thead><tr><th>店舗</th><th>部屋</th><th>日付</th><th>時間</th><th>プラン</th><th>価格</th><th>公開状態</th></tr></thead>
+          <tbody>
+            ${slots.length ? slots.map((slot) => `<tr><td>${adminDbText(slot.store)}</td><td>${adminDbText(slot.room)}</td><td>${adminDbText(slot.date)}</td><td>${adminDbText(slot.time)}</td><td>${adminDbText(slot.plan)}</td><td>${adminDbYen(slot.price)}</td><td><span class="status-chip">${slot.published ? "公開" : "非公開"}</span></td></tr>`).join("") : `<tr><td colspan="7" class="empty-cell">DBに予約枠がありません</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+  document.getElementById("slotForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const required = ["slotStore", "slotRoom", "slotDate", "slotTime", "slotPrice"].map((id) => document.getElementById(id).value.trim());
+    if (required.some((value) => !value)) return showToast("必須項目を入力してください。", "error");
+    state.slots.push({
+      id: createId("s"),
+      store: required[0],
+      room: required[1],
+      date: required[2],
+      time: required[3],
+      price: Number(required[4]),
+      plan: "Secret Sauna",
+      published: document.getElementById("slotPublished").value === "true"
+    });
+    saveState();
+    showToast("予約枠を追加しました。");
+    renderShell();
+  });
+}
+
 render();

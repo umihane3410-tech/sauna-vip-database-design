@@ -172,22 +172,10 @@ public class ServerApp {
                     ORDER BY id
                     """, ServerApp::partnerJson)
                 + ",\"customers\":" + queryArray(conn, """
-                    SELECT COALESCE(external_customer_id, 'customer_' || customer_id) AS id,
-                           COALESCE(customer_code, 'customer_' || customer_id) AS customer_code,
-                           display_name,
-                           email,
-                           partner_name,
-                           vip_rank,
-                           is_vip,
-                           invitation_status,
-                           frequency,
-                           created_at
-                    FROM customers
-                    ORDER BY customer_id
-                    """, ServerApp::customerJson)
-                + ",\"partnerCustomers\":" + queryArray(conn, """
                     SELECT COALESCE(external_customer_id, 'c' || customer_id) AS id,
+                           COALESCE(customer_code, external_customer_id, 'c' || customer_id) AS member_no,
                            display_name AS name,
+                           email,
                            partner_name AS partner,
                            segment,
                            recent_days,
@@ -195,7 +183,27 @@ public class ServerApp {
                            total_amount,
                            amount_label,
                            weekday_idle_rate,
-                           continuous_months
+                           continuous_months,
+                           invitation_status,
+                           created_at
+                    FROM customers
+                    ORDER BY customer_id
+                    """, ServerApp::partnerCustomerJson)
+                + ",\"partnerCustomers\":" + queryArray(conn, """
+                    SELECT COALESCE(external_customer_id, 'c' || customer_id) AS id,
+                           COALESCE(customer_code, external_customer_id, 'c' || customer_id) AS member_no,
+                           display_name AS name,
+                           email,
+                           partner_name AS partner,
+                           segment,
+                           recent_days,
+                           frequency AS monthly_frequency,
+                           total_amount,
+                           amount_label,
+                           weekday_idle_rate,
+                           continuous_months,
+                           invitation_status,
+                           created_at
                     FROM customers
                     WHERE external_customer_id IS NOT NULL
                     ORDER BY customer_id
@@ -260,7 +268,9 @@ public class ServerApp {
     private static void partnerCustomerJson(ResultSet rs, StringBuilder sb) throws SQLException {
         boolean first = true;
         first = pair(sb, "id", rs.getString("id"), first);
+        first = pair(sb, "memberNo", rs.getString("member_no"), first);
         first = pair(sb, "name", rs.getString("name"), first);
+        first = pair(sb, "email", rs.getString("email"), first);
         first = pair(sb, "partner", rs.getString("partner"), first);
         first = pair(sb, "segment", rs.getString("segment"), first);
         first = numberPair(sb, "recentDays", rs.getInt("recent_days"), first);
@@ -268,7 +278,9 @@ public class ServerApp {
         first = numberPair(sb, "amount", rs.getInt("total_amount"), first);
         first = pair(sb, "amountLabel", rs.getString("amount_label"), first);
         first = numberPair(sb, "weekdayIdleRate", rs.getInt("weekday_idle_rate"), first);
-        numberPair(sb, "continuousMonths", rs.getInt("continuous_months"), first);
+        first = numberPair(sb, "continuousMonths", rs.getInt("continuous_months"), first);
+        first = pair(sb, "invitationStatus", rs.getString("invitation_status"), first);
+        pair(sb, "createdAt", safeDate(rs.getString("created_at")), first);
     }
 
     private static void customerJson(ResultSet rs, StringBuilder sb) throws SQLException {
